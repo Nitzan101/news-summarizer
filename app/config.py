@@ -1,0 +1,19 @@
+import os
+from dataclasses import dataclass
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+@dataclass(frozen=True)
+class Settings:
+    database_url: str = os.getenv(
+        "DATABASE_URL", "postgresql+psycopg://news:news@localhost:5433/news"
+    )
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    summarizer: str = os.getenv("SUMMARIZER", "mock")
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+
+
+settings = Settings()
