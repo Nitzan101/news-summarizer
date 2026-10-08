@@ -14,5 +14,7 @@
 - **One app container; the scheduler (APScheduler) runs in-process with FastAPI.** Simplest thing that meets the requirement. At scale, several app replicas would each run a scheduler and fetch in duplicate; the answer then is a separate single-instance scheduler service.
 - **Postgres and Redis run from `docker-compose.yml`** using official images, so nothing has to be installed locally besides Docker.
 
-## Open
-- Many HN stories have only a title and URL, no `story_text`. What the summary is built from (story text, the linked page's text, title + top comments) must be decided before the fetcher and schema are built.
+- **Summary input: the linked page's text**, extracted from its HTML at summary time, falling back to `story_text` and then the title when the page can't be fetched. Most HN stories carry only a title and URL, so summarizing the page is the only way to summarize the article itself rather than its headline. Decided 2026-10-08.
+
+## Plan
+Milestones and the definition of done: `docs/MILESTONES.md`.
