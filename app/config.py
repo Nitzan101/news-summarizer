@@ -14,6 +14,9 @@ class Settings:
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     summarizer: str = os.getenv("SUMMARIZER", "mock")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    # What the fetcher asks Hacker News for, and how many stories per fetch.
+    fetch_query: str = os.getenv("FETCH_QUERY", "technology")
+    fetch_limit: int = int(os.getenv("FETCH_LIMIT", "20"))
 
 
 settings = Settings()

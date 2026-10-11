@@ -20,3 +20,9 @@ def init_db(bind=engine) -> None:
     from app import models  # noqa: F401  importing registers the models on Base
 
     Base.metadata.create_all(bind)
+
+
+def get_session():
+    """FastAPI dependency: one session per request, closed when it ends."""
+    with SessionLocal() as session:
+        yield session

@@ -43,3 +43,21 @@ def clean_tables(request):
         engine = request.getfixturevalue("engine")
         with engine.begin() as conn:
             conn.execute(text("TRUNCATE articles RESTART IDENTITY"))
+
+
+@pytest.fixture
+def api(engine):
+    """A test client whose requests use the test database."""
+    from fastapi.testclient import TestClient
+    from sqlalchemy.orm import Session
+
+    from app.db import get_session
+    from app.main import app
+
+    def override_get_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_get_session
+    yield TestClient(app)
+    app.dependency_overrides.clear()
