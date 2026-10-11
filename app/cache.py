@@ -21,6 +21,10 @@ redis_client = redis.Redis.from_url(
 )
 
 
+# What a cached summary must contain to be served.
+SUMMARY_FIELDS = {"article_id", "summary", "source"}
+
+
 def get_redis() -> redis.Redis:
     """FastAPI dependency: the Redis client."""
     return redis_client
@@ -34,9 +38,13 @@ def get_cached_summary(client: redis.Redis, article_id: int) -> dict | None:
     """The cached summary for this article, or None if there is none."""
     try:
         raw = client.get(summary_key(article_id))
-    except redis.RedisError:
+        cached = json.loads(raw) if raw else None
+    except (redis.RedisError, ValueError):  # Redis is down, or the value is not JSON
         return None
-    return json.loads(raw) if raw else None
+    # Anything that is not a summary we wrote is treated as a miss and overwritten.
+    if not isinstance(cached, dict) or not SUMMARY_FIELDS <= cached.keys():
+        return None
+    return cached
 
 
 def cache_summary(client: redis.Redis, article_id: int, summary: dict) -> None:

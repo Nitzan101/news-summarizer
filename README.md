@@ -18,7 +18,7 @@ Built with FastAPI as a home assignment (Python Backend Developer, Ti-Space Care
 | Automatic fetch every 6 hours | APScheduler, started with the app — `app/scheduler.py` |
 | Caching of summaries | Redis, cache-aside, 24-hour TTL — `app/cache.py` |
 | Dockerfile and Docker setup (bonus) | `Dockerfile`, `docker-compose.yml` (app + PostgreSQL + Redis) |
-| Unit tests | 63 pytest tests — `tests/` |
+| Unit tests | 86 pytest tests — `tests/` |
 | Example responses with Postman | `postman/` (collection with saved examples, plus an environment) |
 
 ## Quick start (Docker)
@@ -42,6 +42,8 @@ Out of the box the summarizer is a **mock** (no API key, no network): summaries 
 | 8000 | API | Using the service |
 | 5433 | PostgreSQL | Only for running the tests or the app from the host |
 | 6379 | Redis | Only for running the tests or the app from the host |
+
+PostgreSQL and Redis are published on `127.0.0.1` only, so they are not reachable from other machines.
 
 If `docker compose up` fails with `port is already allocated`, something on your machine already uses one of these. Change the **left** number of that mapping in `docker-compose.yml` (for example `"8080:8000"`), and use the new port in the URLs. The right number is the port inside the container and must stay as it is.
 
@@ -71,7 +73,7 @@ If the selected provider has no key, the service refuses to start and says why, 
 | Method and path | Description |
 |---|---|
 | `GET /articles?page=1&size=10` | One page of articles, newest first. `page` starts at 1; `size` is 1–100. |
-| `GET /articles/{id}` | One article. `404` if it does not exist. |
+| `GET /articles/{id}` | One article. `404` if it does not exist, `422` if the id is not a positive integer. |
 | `GET /articles/{id}/summary` | AI summary of the article. `404` if it does not exist, `502` if the AI provider fails. |
 | `POST /fetch` | Fetch from Hacker News now instead of waiting for the schedule. `502` if Hacker News fails. |
 | `GET /health` | Liveness check. |
@@ -103,6 +105,8 @@ curl "http://localhost:8000/articles?page=1&size=1"
 ```
 
 Ids are unique but not consecutive: PostgreSQL advances the id sequence even for a story that turns out to exist already, so each re-fetch leaves a gap.
+
+With `SUMMARIZER=gemini` (the default mock returns an excerpt marked `[mock summary]` instead):
 
 ```bash
 curl "http://localhost:8000/articles/2/summary"
@@ -168,7 +172,7 @@ Hacker News is a link board: it stores a story's title, URL and metadata, not th
 
 ## Configuration
 
-All settings are environment variables; every one has a default, so nothing is required for the mock setup. See `.env.example`.
+All settings are environment variables; every one has a default, so nothing is required for the mock setup. Put overrides in `.env` (see `.env.example`): Compose passes every variable below into the container, and the app reads the same file when run from the host.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -209,7 +213,8 @@ What the tests are built on:
 - **Real PostgreSQL and Redis, not fakes.** Upserts, unique constraints, TTLs and connection handling are properties of the real systems.
 - **Real AI SDKs over a fake HTTP transport.** The Gemini and Anthropic clients build real requests and parse real-shaped responses; only the network underneath is replaced. No test needs a key or costs anything.
 - **External HTTP is faked, never called.** Hacker News and article pages are served by in-memory transports.
-- **Failure paths are tested, not only success:** a provider that is down, a blocked or empty AI reply, a malformed story, an unreachable article page, Redis being down, PostgreSQL closing its connections.
+- **Failure paths are tested, not only success:** a provider that is down, a blocked or empty AI reply, a malformed story or an unexpected body from Hacker News, an unreachable or malformed article URL, Redis being down or holding garbage, PostgreSQL closing its connections, ids and page numbers too large for the database.
+- **Fixed settings.** The suite sets its own environment before importing the app, so a `.env` with a real provider and key cannot make it call a paid API.
 
 ## Design decisions
 
@@ -230,6 +235,8 @@ The reasoning behind each choice is recorded in [`docs/DESIGN.md`](docs/DESIGN.m
 - **Migrations.** Tables are created with SQLAlchemy's `create_all`, which cannot alter an existing table. That is acceptable here — one table, a fixed schema, data that can be re-fetched — but a real system needs Alembic migrations.
 - **The scheduler as its own service.** It runs inside the API process. With several API replicas, each would run its own scheduler and fetch in duplicate (harmless thanks to the upsert, but wasteful). The fix is a single-instance scheduler service that triggers the fetch.
 - **Summaries off the request path.** A summary request waits for the article's site and for the AI provider. A job queue with a "pending" state would keep requests fast.
+- **One AI call per article under concurrency.** Several simultaneous requests for an uncached summary each fetch the page and call the provider. A per-article lock (or the job queue above) would collapse them into one.
+- **Pinned dependencies.** `requirements.txt` gives version ranges; a lockfile would make builds reproducible.
 - **Better text extraction.** BeautifulSoup with a list of tags to drop leaves some page chrome in the text. A dedicated extractor would give cleaner input.
 
 ## Beyond the assignment
@@ -243,5 +250,5 @@ The reasoning behind each choice is recorded in [`docs/DESIGN.md`](docs/DESIGN.m
 
 - The Claude implementation has not been run against the real Anthropic API.
 - No authentication or rate limiting on the API.
-- The service fetches whatever URL a Hacker News story links to. Only `http` and `https` URLs are fetched, with a 10-second timeout, and at most 8,000 characters of the extracted text are used, but the download itself is not size-limited and there is no protection against a link that points at an internal network address.
+- The service fetches whatever URL a Hacker News story links to. Only `http` and `https` URLs are fetched, with a 10-second timeout, and at most 8,000 characters of the extracted text are used, but the download itself is not size-limited, redirects are followed, and there is no protection against a link that points at an internal network address — whose content could then be reflected in a summary.
 - Gemini's free tier has request quotas; when they are exhausted the summary endpoint returns `502` until they reset.

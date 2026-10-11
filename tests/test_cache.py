@@ -62,7 +62,7 @@ def test_service_works_when_redis_is_down(api, saved_article):
     use(summarizer)
     # Nothing listens on this port.
     app.dependency_overrides[get_redis] = lambda: redis.Redis.from_url(
-        "redis://localhost:6390/0", socket_connect_timeout=0.2
+        "redis://127.0.0.1:6390/0", socket_connect_timeout=0.2
     )
 
     first = api.get(f"/articles/{saved_article}/summary")

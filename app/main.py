@@ -1,9 +1,10 @@
 import logging
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 import httpx
 import redis
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Path, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,7 @@ from app.config import settings
 from app.content import get_page_client, text_to_summarize
 from app.db import get_session, init_db
 from app.fetcher import run_fetch
-from app.hn_client import get_hn_client
+from app.hn_client import HackerNewsError, get_hn_client
 from app.models import Article
 from app.scheduler import build_scheduler
 from app.schemas import ArticleOut, ArticlePage, SummaryOut
@@ -40,13 +41,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="News Summarizer", lifespan=lifespan)
 
+# The id column is a 32-bit integer: a larger number can never match a row,
+# and passing it to Postgres would raise instead of returning 404.
+ArticleId = Annotated[int, Path(ge=1, le=2_147_483_647)]
+# Far beyond any real page, and small enough that the offset fits in Postgres.
+MAX_PAGE = 1_000_000
+
+NOT_FOUND = {404: {"description": "No article with this id"}}
+BAD_GATEWAY = {"description": "An external service the request depends on failed"}
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/fetch")
+@app.post("/fetch", responses={502: BAD_GATEWAY})
 def fetch(
     session: Session = Depends(get_session),
     client: httpx.Client = Depends(get_hn_client),
@@ -54,7 +64,7 @@ def fetch(
     """Fetch the newest stories from Hacker News now and store them."""
     try:
         fetched = run_fetch(session, client)
-    except httpx.HTTPError:
+    except HackerNewsError:
         # The failure is upstream, not ours and not the caller's: 502.
         raise HTTPException(status_code=502, detail="Hacker News is unavailable")
     return {"fetched": fetched}
@@ -62,7 +72,7 @@ def fetch(
 
 @app.get("/articles", response_model=ArticlePage)
 def list_articles(
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
     size: int = Query(10, ge=1, le=100),
     session: Session = Depends(get_session),
 ):
@@ -78,17 +88,21 @@ def list_articles(
     return {"items": items, "total": total, "page": page, "size": size}
 
 
-@app.get("/articles/{article_id}", response_model=ArticleOut)
-def get_article(article_id: int, session: Session = Depends(get_session)):
+@app.get("/articles/{article_id}", response_model=ArticleOut, responses=NOT_FOUND)
+def get_article(article_id: ArticleId, session: Session = Depends(get_session)):
     article = session.get(Article, article_id)
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
     return article
 
 
-@app.get("/articles/{article_id}/summary", response_model=SummaryOut)
+@app.get(
+    "/articles/{article_id}/summary",
+    response_model=SummaryOut,
+    responses={**NOT_FOUND, 502: BAD_GATEWAY},
+)
 def get_summary(
-    article_id: int,
+    article_id: ArticleId,
     session: Session = Depends(get_session),
     page_client: httpx.Client = Depends(get_page_client),
     summarizer: Summarizer = Depends(get_summarizer),

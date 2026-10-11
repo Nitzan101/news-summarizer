@@ -41,7 +41,8 @@ def fetch_page_text(client: httpx.Client, url: str) -> str | None:
     try:
         response = client.get(url)
         response.raise_for_status()
-    except httpx.HTTPError:
+    except (httpx.HTTPError, httpx.InvalidURL):
+        # InvalidURL is not an HTTPError: the link itself is malformed.
         return None
     if "html" not in response.headers.get("content-type", ""):
         return None  # a PDF, an image, a video...

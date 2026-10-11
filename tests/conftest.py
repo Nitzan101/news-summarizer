@@ -1,7 +1,20 @@
 import os
 
-# Tests never start the background scheduler. Set before the app is imported.
-os.environ["SCHEDULER_ENABLED"] = "false"
+# Tests run under fixed settings, whatever the developer's shell or .env says:
+# no scheduler, the mock summarizer (never a real AI API), default values.
+# Set before the app is imported; a variable already set is not overridden by .env.
+os.environ.update(
+    {
+        "SCHEDULER_ENABLED": "false",
+        "SUMMARIZER": "mock",
+        "GEMINI_API_KEY": "",
+        "ANTHROPIC_API_KEY": "",
+        "FETCH_QUERY": "technology",
+        "FETCH_LIMIT": "20",
+        "FETCH_INTERVAL_HOURS": "6",
+        "SUMMARY_CACHE_TTL_SECONDS": "86400",
+    }
+)
 
 import psycopg
 import pytest
@@ -11,11 +24,11 @@ from app.db import init_db, make_engine
 
 TEST_DB_NAME = "news_test"
 TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL", f"postgresql+psycopg://news:news@localhost:5433/{TEST_DB_NAME}"
+    "TEST_DATABASE_URL", f"postgresql+psycopg://news:news@127.0.0.1:5433/{TEST_DB_NAME}"
 )
-ADMIN_URL = "postgresql://news:news@localhost:5433/postgres"
+ADMIN_URL = "postgresql://news:news@127.0.0.1:5433/postgres"
 # The app uses Redis database 0; tests use database 1.
-TEST_REDIS_URL = os.getenv("TEST_REDIS_URL", "redis://localhost:6379/1")
+TEST_REDIS_URL = os.getenv("TEST_REDIS_URL", "redis://127.0.0.1:6379/1")
 
 
 def _create_test_database() -> None:

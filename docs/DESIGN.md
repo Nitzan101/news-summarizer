@@ -8,7 +8,7 @@
 - Unit tests, README, Postman collection with example responses; Dockerfile and Docker setup as a bonus.
 
 ## Decisions
-- **Data source: Hacker News via Algolia** (`https://hn.algolia.com/api/v1/search?tags=story&query=...`). No API key and no quota, so a reviewer can run the project with nothing to sign up for. `tags=story` is required: without it the search mixes stories and comments, which have different fields.
+- **Data source: Hacker News via Algolia** (`https://hn.algolia.com/api/v1/search_by_date?tags=story&query=...`, newest first). No API key and no quota, so a reviewer can run the project with nothing to sign up for. `tags=story` is required: without it the search mixes stories and comments, which have different fields.
 - **AI: a summarizer interface with three implementations — mock, Google Gemini, Anthropic Claude** — selected by `SUMMARIZER=mock|gemini|claude`. A reviewer without a key can still run everything on the mock, and tests never call the network. Gemini (`gemini-3.5-flash-lite`) is the provider run for real, because its free tier needs no payment method; Anthropic and OpenAI both require a $5 prepaid minimum. Claude (`claude-haiku-5-5`) is implemented and tested against a fake HTTP layer only. Adding Gemini touched one class, one branch in `build_summarizer` and config — the endpoint, cache, scheduler and Dockerfile did not change, which is what the interface is for. Decided 2026-10-08, provider changed 2026-10-11.
 - **Caching: cache-aside in Redis**, keyed by article id. A summary of an unchanged article never changes, while generating one is slow, costs money and is rate-limited.
 - **One app container; the scheduler (APScheduler) runs in-process with FastAPI.** Simplest thing that meets the requirement. At scale, several app replicas would each run a scheduler and fetch in duplicate; the answer then is a separate single-instance scheduler service.
@@ -28,6 +28,5 @@
 
 - **Pooled database connections are checked before use (`pool_pre_ping`).** A real run showed the first request after Postgres dropped a pooled connection failing with a 500. The main job runs every 6 hours, so a connection that died while idle is the expected case. The tests build their engine with the same `make_engine()` as the app, and one test kills the pool's connections from the Postgres side. Decided 2026-10-11.
 - **A malformed story is skipped, not fatal.** A story missing a required field used to raise and lose the whole fetch; it is now logged and skipped. Decided 2026-10-11.
-
-## Plan
-Milestones and the definition of done: `docs/MILESTONES.md`.
+- **Bad input and misbehaving dependencies never produce a 500.** An independent review of the finished project found four ways to get one: an id or page too large for Postgres, a 200 from Hacker News with an unexpected body, a malformed article URL, and an unusable value in the cache. Each now maps to the status that describes it (422, 502) or to the documented fallback. Decided 2026-10-11.
+- **Tests run under fixed settings.** They set their own environment before importing the app, so a developer's `.env` with a real provider and key cannot make the suite call a paid API. Decided 2026-10-11.

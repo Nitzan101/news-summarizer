@@ -43,5 +43,8 @@ def build_scheduler() -> BackgroundScheduler:
         # If a run is still going when the next is due, skip instead of overlapping.
         max_instances=1,
         coalesce=True,
+        # Run a job however late it starts. The default drops a run that is more
+        # than 1 s overdue, which on a slow startup would skip the first fetch.
+        misfire_grace_time=None,
     )
     return scheduler
