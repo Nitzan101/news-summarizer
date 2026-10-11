@@ -32,3 +32,4 @@ class SummaryOut(BaseModel):
     article_id: int
     summary: str
     source: str  # what was summarized: "page", "story_text" or "title"
+    cached: bool  # True when this answer came from the cache

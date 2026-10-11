@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 
 import httpx
+import redis
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.cache import cache_summary, get_cached_summary, get_redis
 from app.content import get_page_client, text_to_summarize
 from app.db import get_session, init_db
 from app.fetcher import run_fetch
@@ -75,14 +77,23 @@ def get_summary(
     session: Session = Depends(get_session),
     page_client: httpx.Client = Depends(get_page_client),
     summarizer: Summarizer = Depends(get_summarizer),
+    cache: redis.Redis = Depends(get_redis),
 ):
     article = session.get(Article, article_id)
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
+    # Cache-aside: answer from the cache when we can...
+    cached = get_cached_summary(cache, article.id)
+    if cached is not None:
+        return {**cached, "cached": True}
+
+    # ...otherwise do the slow work and remember the result.
     text, source = text_to_summarize(article, page_client)
     try:
         summary = summarizer.summarize(article.title, text)
     except SummarizerError:
         raise HTTPException(status_code=502, detail="Summarizer is unavailable")
-    return {"article_id": article.id, "summary": summary, "source": source}
+    result = {"article_id": article.id, "summary": summary, "source": source}
+    cache_summary(cache, article.id, result)
+    return {**result, "cached": False}

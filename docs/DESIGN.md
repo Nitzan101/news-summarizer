@@ -19,5 +19,8 @@
 - **Text extraction: BeautifulSoup**, removing script/style/nav/header/footer/aside/form and taking the remaining text, capped at 8000 characters (summarizing is paid per amount of text). Chosen over trafilatura: lighter and explainable line by line; the cost is some leftover page chrome. Decided 2026-10-11.
 - **The real Claude integration is its own milestone (M8), after everything else works on the mock.** It is the only part that costs money and needs a key; the interface means nothing else changes when it lands. Decided 2026-10-11.
 
+- **Summaries expire from the cache after 24 hours.** A summary built from a fallback (the linked site was down, so only the title was summarized) would otherwise be served forever; after expiry it is rebuilt and can improve. It also keeps Redis from filling with summaries nobody asks for again. Decided 2026-10-11.
+- **Redis failing never fails a request.** The cache holds nothing that cannot be rebuilt, so a component whose only job is speed must not be able to take the service down. Postgres is different: it is the source of truth, and without it requests fail. Decided 2026-10-11.
+
 ## Plan
 Milestones and the definition of done: `docs/MILESTONES.md`.

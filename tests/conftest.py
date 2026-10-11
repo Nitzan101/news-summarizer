@@ -11,6 +11,8 @@ TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL", f"postgresql+psycopg://news:news@localhost:5433/{TEST_DB_NAME}"
 )
 ADMIN_URL = "postgresql://news:news@localhost:5433/postgres"
+# The app uses Redis database 0; tests use database 1.
+TEST_REDIS_URL = os.getenv("TEST_REDIS_URL", "redis://localhost:6379/1")
 
 
 def _create_test_database() -> None:
@@ -46,11 +48,24 @@ def clean_tables(request):
 
 
 @pytest.fixture
-def api(engine):
-    """A test client whose requests use the test database."""
+def cache():
+    """A client on a separate Redis database (1), emptied around each test."""
+    import redis
+
+    client = redis.Redis.from_url(TEST_REDIS_URL, decode_responses=True)
+    client.flushdb()
+    yield client
+    client.flushdb()
+    client.close()
+
+
+@pytest.fixture
+def api(engine, cache):
+    """A test client whose requests use the test database and test cache."""
     from fastapi.testclient import TestClient
     from sqlalchemy.orm import Session
 
+    from app.cache import get_redis
     from app.db import get_session
     from app.main import app
 
@@ -59,5 +74,6 @@ def api(engine):
             yield session
 
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_redis] = lambda: cache
     yield TestClient(app)
     app.dependency_overrides.clear()
