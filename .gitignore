@@ -7,3 +7,9 @@ __pycache__/
 # Local working notes, not part of the project
 CLAUDE.md
 docs/MILESTONES.md
+
+# Files the Postman app writes when this folder is opened in it
+.postman/
+postman/collections/
+postman/environments/
+postman/globals/
