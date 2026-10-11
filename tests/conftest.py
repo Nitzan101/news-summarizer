@@ -5,9 +5,9 @@ os.environ["SCHEDULER_ENABLED"] = "false"
 
 import psycopg
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
-from app.db import init_db
+from app.db import init_db, make_engine
 
 TEST_DB_NAME = "news_test"
 TEST_DATABASE_URL = os.getenv(
@@ -32,7 +32,7 @@ def _create_test_database() -> None:
 def engine():
     """One engine for the whole test run, on a separate test database."""
     _create_test_database()
-    engine = create_engine(TEST_DATABASE_URL)
+    engine = make_engine(TEST_DATABASE_URL)  # built exactly as the app builds its own
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE IF EXISTS articles"))
     init_db(engine)

@@ -84,3 +84,17 @@ def test_post_fetch_returns_502_when_hacker_news_fails(api, engine):
 
     assert response.status_code == 502
     assert count_articles(engine) == 0
+
+
+def test_malformed_stories_are_skipped_and_the_rest_are_stored(engine, caplog):
+    no_author = {k: v for k, v in LINK_STORY.items() if k != "author"} | {"objectID": "1"}
+    no_title = {**LINK_STORY, "objectID": "2", "title": None}
+    bad_date = {**LINK_STORY, "objectID": "3", "created_at": "yesterday"}
+    bad_id = {**LINK_STORY, "objectID": "not-a-number"}
+
+    with Session(engine) as session:
+        stored = upsert_articles(session, [no_author, no_title, bad_date, bad_id, TEXT_STORY])
+
+    assert stored == 1
+    assert count_articles(engine) == 1
+    assert caplog.text.count("Skipping") == 4

@@ -1,5 +1,6 @@
 """Turns Hacker News stories into rows of the articles table."""
 
+import logging
 from datetime import datetime
 
 import httpx
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.hn_client import fetch_stories
 from app.models import Article
+
+logger = logging.getLogger(__name__)
 
 
 def to_article_fields(hit: dict) -> dict:
@@ -29,10 +32,18 @@ def to_article_fields(hit: dict) -> dict:
 def upsert_articles(session: Session, hits: list[dict]) -> int:
     """Insert new stories and update ones we already have. Returns the count."""
     # Keyed by hn_id: one statement cannot upsert the same row twice.
-    rows = {
-        fields["hn_id"]: fields
-        for fields in (to_article_fields(hit) for hit in hits if hit.get("title"))
-    }
+    rows = {}
+    for hit in hits:
+        try:
+            fields = to_article_fields(hit)
+        except (KeyError, TypeError, ValueError):
+            # One malformed story must not cost us the other nineteen.
+            logger.warning("Skipping malformed story %r", hit.get("objectID"))
+            continue
+        if not fields["title"] or not fields["author"]:
+            logger.warning("Skipping story %s with no title or author", fields["hn_id"])
+            continue
+        rows[fields["hn_id"]] = fields
     if not rows:
         return 0
 

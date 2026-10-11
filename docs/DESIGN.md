@@ -26,5 +26,8 @@
 
 - **The scheduled job calls the fetch function directly, not our own `POST /fetch` over HTTP.** Both entry points share `run_fetch`; a server sending itself a request would add the server's address and startup timing as failure points for no gain. With a separate scheduler service (the scale-up design), an HTTP call becomes the natural trigger. Decided 2026-10-11.
 
+- **Pooled database connections are checked before use (`pool_pre_ping`).** A real run showed the first request after Postgres dropped a pooled connection failing with a 500. The main job runs every 6 hours, so a connection that died while idle is the expected case. The tests build their engine with the same `make_engine()` as the app, and one test kills the pool's connections from the Postgres side. Decided 2026-10-11.
+- **A malformed story is skipped, not fatal.** A story missing a required field used to raise and lose the whole fetch; it is now logged and skipped. Decided 2026-10-11.
+
 ## Plan
 Milestones and the definition of done: `docs/MILESTONES.md`.
