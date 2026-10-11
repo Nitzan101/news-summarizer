@@ -1,0 +1,10 @@
+# Keep these out of the image: secrets, local environments, and anything
+# the running service does not need.
+.env
+.venv/
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+tests/
+docs/
