@@ -16,5 +16,8 @@
 
 - **Summary input: the linked page's text**, extracted from its HTML at summary time, falling back to `story_text` and then the title when the page can't be fetched. Most HN stories carry only a title and URL, so summarizing the page is the only way to summarize the article itself rather than its headline. Decided 2026-10-08.
 
+- **Text extraction: BeautifulSoup**, removing script/style/nav/header/footer/aside/form and taking the remaining text, capped at 8000 characters (summarizing is paid per amount of text). Chosen over trafilatura: lighter and explainable line by line; the cost is some leftover page chrome. Decided 2026-10-11.
+- **The real Claude integration is its own milestone (M8), after everything else works on the mock.** It is the only part that costs money and needs a key; the interface means nothing else changes when it lands. Decided 2026-10-11.
+
 ## Plan
 Milestones and the definition of done: `docs/MILESTONES.md`.

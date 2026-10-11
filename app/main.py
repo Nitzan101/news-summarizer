@@ -5,11 +5,13 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.content import get_page_client, text_to_summarize
 from app.db import get_session, init_db
 from app.fetcher import run_fetch
 from app.hn_client import get_hn_client
 from app.models import Article
-from app.schemas import ArticleOut, ArticlePage
+from app.schemas import ArticleOut, ArticlePage, SummaryOut
+from app.summarizer import Summarizer, SummarizerError, get_summarizer
 
 
 @asynccontextmanager
@@ -65,3 +67,22 @@ def get_article(article_id: int, session: Session = Depends(get_session)):
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
     return article
+
+
+@app.get("/articles/{article_id}/summary", response_model=SummaryOut)
+def get_summary(
+    article_id: int,
+    session: Session = Depends(get_session),
+    page_client: httpx.Client = Depends(get_page_client),
+    summarizer: Summarizer = Depends(get_summarizer),
+):
+    article = session.get(Article, article_id)
+    if article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    text, source = text_to_summarize(article, page_client)
+    try:
+        summary = summarizer.summarize(article.title, text)
+    except SummarizerError:
+        raise HTTPException(status_code=502, detail="Summarizer is unavailable")
+    return {"article_id": article.id, "summary": summary, "source": source}

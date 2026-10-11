@@ -26,3 +26,9 @@ class ArticlePage(BaseModel):
     total: int  # all articles in the database, not just this page
     page: int
     size: int
+
+
+class SummaryOut(BaseModel):
+    article_id: int
+    summary: str
+    source: str  # what was summarized: "page", "story_text" or "title"
