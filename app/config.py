@@ -17,6 +17,9 @@ class Settings:
     # What the fetcher asks Hacker News for, and how many stories per fetch.
     fetch_query: str = os.getenv("FETCH_QUERY", "technology")
     fetch_limit: int = int(os.getenv("FETCH_LIMIT", "20"))
+    # The scheduler: how often it fetches, and a switch to turn it off (tests).
+    fetch_interval_hours: float = float(os.getenv("FETCH_INTERVAL_HOURS", "6"))
+    scheduler_enabled: bool = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
     # How long a cached summary lives in Redis (default: 24 hours).
     summary_cache_ttl_seconds: int = int(os.getenv("SUMMARY_CACHE_TTL_SECONDS", "86400"))
 

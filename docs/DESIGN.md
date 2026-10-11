@@ -22,5 +22,7 @@
 - **Summaries expire from the cache after 24 hours.** A summary built from a fallback (the linked site was down, so only the title was summarized) would otherwise be served forever; after expiry it is rebuilt and can improve. It also keeps Redis from filling with summaries nobody asks for again. Decided 2026-10-11.
 - **Redis failing never fails a request.** The cache holds nothing that cannot be rebuilt, so a component whose only job is speed must not be able to take the service down. Postgres is different: it is the source of truth, and without it requests fail. Decided 2026-10-11.
 
+- **The scheduled job calls the fetch function directly, not our own `POST /fetch` over HTTP.** Both entry points share `run_fetch`; a server sending itself a request would add the server's address and startup timing as failure points for no gain. With a separate scheduler service (the scale-up design), an HTTP call becomes the natural trigger. Decided 2026-10-11.
+
 ## Plan
 Milestones and the definition of done: `docs/MILESTONES.md`.

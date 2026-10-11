@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 import httpx
@@ -7,20 +8,32 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.cache import cache_summary, get_cached_summary, get_redis
+from app.config import settings
 from app.content import get_page_client, text_to_summarize
 from app.db import get_session, init_db
 from app.fetcher import run_fetch
 from app.hn_client import get_hn_client
 from app.models import Article
+from app.scheduler import build_scheduler
 from app.schemas import ArticleOut, ArticlePage, SummaryOut
 from app.summarizer import Summarizer, SummarizerError, get_summarizer
 
 
+# Show our own INFO messages (e.g. the scheduler's) next to uvicorn's.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Runs once when the server starts: make sure the tables exist.
+    # Before the yield: runs once when the server starts.
     init_db()
+    scheduler = build_scheduler() if settings.scheduler_enabled else None
+    if scheduler:
+        scheduler.start()
     yield
+    # After the yield: runs once when the server shuts down.
+    if scheduler:
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="News Summarizer", lifespan=lifespan)

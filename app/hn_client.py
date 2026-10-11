@@ -9,9 +9,14 @@ SEARCH_URL = "https://hn.algolia.com/api/v1/search_by_date"
 TIMEOUT_SECONDS = 10.0
 
 
+def new_hn_client() -> httpx.Client:
+    """A client for Hacker News; the caller closes it (use `with`)."""
+    return httpx.Client(timeout=TIMEOUT_SECONDS)
+
+
 def get_hn_client() -> Iterator[httpx.Client]:
     """FastAPI dependency: an HTTP client, closed when the request ends."""
-    with httpx.Client(timeout=TIMEOUT_SECONDS) as client:
+    with new_hn_client() as client:
         yield client
 
 

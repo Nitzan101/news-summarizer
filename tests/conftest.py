@@ -1,5 +1,8 @@
 import os
 
+# Tests never start the background scheduler. Set before the app is imported.
+os.environ["SCHEDULER_ENABLED"] = "false"
+
 import psycopg
 import pytest
 from sqlalchemy import create_engine, text
