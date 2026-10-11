@@ -16,7 +16,7 @@ from app.hn_client import get_hn_client
 from app.models import Article
 from app.scheduler import build_scheduler
 from app.schemas import ArticleOut, ArticlePage, SummaryOut
-from app.summarizer import Summarizer, SummarizerError, get_summarizer
+from app.summarizer import Summarizer, SummarizerError, build_summarizer, get_summarizer
 
 
 # Show our own INFO messages (e.g. the scheduler's) next to uvicorn's.
@@ -26,6 +26,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Before the yield: runs once when the server starts.
+    # Fail at startup, not on the first request, if SUMMARIZER is misconfigured.
+    build_summarizer()
     init_db()
     scheduler = build_scheduler() if settings.scheduler_enabled else None
     if scheduler:
