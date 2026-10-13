@@ -63,6 +63,16 @@ def clean_tables(request):
             conn.execute(text("TRUNCATE articles RESTART IDENTITY"))
 
 
+@pytest.fixture(autouse=True)
+def offline_url_check(monkeypatch):
+    """Tests use fake hostnames (example.com) that must not need real DNS.
+
+    So the "is this host public?" check passes by default; tests/test_content_safety.py
+    puts the real check back.
+    """
+    monkeypatch.setattr("app.content.is_public_http_url", lambda url: True)
+
+
 @pytest.fixture
 def cache():
     """A client on a separate Redis database (1), emptied around each test."""
