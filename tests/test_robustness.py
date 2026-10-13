@@ -3,12 +3,11 @@
 import httpx
 import pytest
 
-from app.cache import summary_key
 from app.content import get_page_client, text_to_summarize
 from app.hn_client import get_hn_client
 from app.main import app
 from app.summarizer import get_summarizer
-from tests.test_cache import CountingSummarizer
+from tests.test_cache import CountingSummarizer, key_of
 from tests.test_summary import fake_page_client, make_article, saved_article  # noqa: F401
 
 
@@ -68,12 +67,26 @@ def test_unusable_article_url_falls_back_to_the_story_text():
 # --- Garbage in the cache ----------------------------------------------------
 
 
-@pytest.mark.parametrize("garbage", ["not json", '{"foo": 1}', "[]", '"just a string"'])
+@pytest.mark.parametrize(
+    "garbage",
+    [
+        "not json",
+        '{"foo": 1}',
+        "[]",
+        '"just a string"',
+        # Right keys, wrong values:
+        '{"article_id": 1, "summary": null, "source": "page"}',
+        '{"article_id": 1, "summary": "  ", "source": "page"}',
+        '{"article_id": 1, "summary": 5, "source": "page"}',
+        '{"article_id": 1, "summary": "text", "source": "elsewhere"}',
+        '{"article_id": 2, "summary": "text", "source": "page"}',  # another article's summary
+    ],
+)
 def test_unusable_cache_entry_is_ignored_and_replaced(api, cache, saved_article, garbage):
     summarizer = CountingSummarizer()
     app.dependency_overrides[get_page_client] = lambda: fake_page_client({})
     app.dependency_overrides[get_summarizer] = lambda: summarizer
-    cache.set(summary_key(saved_article), garbage)
+    cache.set(key_of(saved_article), garbage)
 
     response = api.get(f"/articles/{saved_article}/summary")
 

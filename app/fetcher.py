@@ -15,16 +15,38 @@ from app.models import Article
 logger = logging.getLogger(__name__)
 
 
+def _text(value: object, field: str, required: bool) -> str | None:
+    """The value if it is a string (or, when optional, missing); else TypeError."""
+    if value is None and not required:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(field)
+    return value
+
+
+def _count(value: object, field: str) -> int:
+    """The value if it is a whole number (a missing one counts as 0); else TypeError."""
+    value = value or 0
+    if type(value) is not int:  # bool is a subclass of int, so isinstance would let it in
+        raise TypeError(field)
+    return value
+
+
 def to_article_fields(hit: dict) -> dict:
-    """Map one story from the HN response to Article columns."""
+    """Map one story from the HN response to Article columns.
+
+    A value of the wrong type raises TypeError here, so upsert_articles skips that
+    story. Left alone, it would make the database reject the single INSERT that
+    holds every story, and the good ones would be lost with it.
+    """
     return {
         "hn_id": int(hit["objectID"]),  # arrives as a string
-        "title": hit["title"],
-        "url": hit.get("url"),  # absent on text posts such as Ask HN
-        "author": hit["author"],
-        "points": hit.get("points") or 0,
-        "num_comments": hit.get("num_comments") or 0,
-        "story_text": hit.get("story_text"),  # absent on link posts
+        "title": _text(hit["title"], "title", required=True),
+        "url": _text(hit.get("url"), "url", required=False),  # absent on text posts
+        "author": _text(hit["author"], "author", required=True),
+        "points": _count(hit.get("points"), "points"),
+        "num_comments": _count(hit.get("num_comments"), "num_comments"),
+        "story_text": _text(hit.get("story_text"), "story_text", required=False),
         "created_at": datetime.fromisoformat(hit["created_at"]),
     }
 

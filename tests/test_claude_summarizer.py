@@ -2,6 +2,10 @@
 
 Nothing here reaches the network: the SDK builds real requests and parses
 real-shaped responses, and only the transport underneath it is replaced.
+
+This file imports `httpx2`, not `httpx`: the Anthropic SDK sends its requests with
+`httpx2` and only accepts that library's objects. It is not in our requirements
+files because pip installs it together with `anthropic`.
 """
 
 import json

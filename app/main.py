@@ -5,10 +5,10 @@ from typing import Annotated
 import httpx
 import redis
 from fastapi import Depends, FastAPI, HTTPException, Path, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.cache import cache_summary, get_cached_summary, get_redis
+from app.cache import cache_summary, get_cached_summary, get_redis, summary_fingerprint
 from app.config import settings
 from app.content import get_page_client, text_to_summarize
 from app.db import get_session, init_db
@@ -22,6 +22,7 @@ from app.summarizer import Summarizer, SummarizerError, build_summarizer, get_su
 
 # Show our own INFO messages (e.g. the scheduler's) next to uvicorn's.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -53,6 +54,22 @@ BAD_GATEWAY = {"description": "An external service the request depends on failed
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    """Liveness: the process is running. It checks nothing else."""
+    return {"status": "ok"}
+
+
+@app.get("/ready", responses={503: {"description": "The database does not answer"}})
+def ready(session: Session = Depends(get_session)) -> dict[str, str]:
+    """Readiness: the service can do its work, which needs the database.
+
+    Redis is not checked: the cache is optional and the service works without it.
+    """
+    try:
+        session.execute(text("SELECT 1"))
+    except Exception:
+        # Log the cause here; the caller only needs to know it is not ready.
+        logger.exception("Readiness check failed")
+        raise HTTPException(status_code=503, detail="Not ready")
     return {"status": "ok"}
 
 
@@ -109,11 +126,19 @@ def get_summary(
     cache: redis.Redis = Depends(get_redis),
 ):
     article = session.get(Article, article_id)
+    # The database is not needed from here on, and the slow work below (a page
+    # download, an AI call) can take up to 40 seconds. Give the connection back to
+    # the pool now instead of holding it until the request ends. The article keeps
+    # the values it already loaded.
+    session.close()
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
+    # The key changes when the article, the summarizer or the model changes.
+    fingerprint = summary_fingerprint(article.title, article.url, article.story_text)
+
     # Cache-aside: answer from the cache when we can...
-    cached = get_cached_summary(cache, article.id)
+    cached = get_cached_summary(cache, article.id, fingerprint)
     if cached is not None:
         return {**cached, "cached": True}
 
@@ -124,5 +149,5 @@ def get_summary(
     except SummarizerError:
         raise HTTPException(status_code=502, detail="Summarizer is unavailable")
     result = {"article_id": article.id, "summary": summary, "source": source}
-    cache_summary(cache, article.id, result)
+    cache_summary(cache, article.id, fingerprint, result)
     return {**result, "cached": False}

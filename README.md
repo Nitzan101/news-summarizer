@@ -43,9 +43,9 @@ Out of the box the summarizer is a **mock** (no API key, no network): summaries 
 | 5433 | PostgreSQL | Only for running the tests or the app from the host |
 | 6379 | Redis | Only for running the tests or the app from the host |
 
-PostgreSQL and Redis are published on `127.0.0.1` only, so they are not reachable from other machines.
+The API, PostgreSQL and Redis are all published on `127.0.0.1` only, so none of them is reachable from other machines.
 
-If `docker compose up` fails with `port is already allocated`, something on your machine already uses one of these. Change the **left** number of that mapping in `docker-compose.yml` (for example `"8080:8000"`), and use the new port in the URLs. The right number is the port inside the container and must stay as it is.
+If `docker compose up` fails with `port is already allocated`, something on your machine already uses one of these. Change the **left** number of that mapping in `docker-compose.yml` (for example `"127.0.0.1:8080:8000"`; keep the `127.0.0.1:`), and use the new port in the URLs. The right number is the port inside the container and must stay as it is.
 
 ## Real AI summaries
 
@@ -76,7 +76,8 @@ If the selected provider has no key, the service refuses to start and says why, 
 | `GET /articles/{id}` | One article. `404` if it does not exist, `422` if the id is not a positive integer. |
 | `GET /articles/{id}/summary` | AI summary of the article. `404` if it does not exist, `502` if the AI provider fails. |
 | `POST /fetch` | Fetch from Hacker News now instead of waiting for the schedule. `502` if Hacker News fails. |
-| `GET /health` | Liveness check. |
+| `GET /health` | Liveness: the process is running. |
+| `GET /ready` | Readiness: the database answers. `503` if it does not. Redis is not checked, because the cache is optional. |
 
 ```bash
 curl "http://localhost:8000/articles?page=1&size=1"
@@ -166,7 +167,7 @@ Each external system is reached through exactly one module, so replacing the dat
 
 Hacker News is a link board: it stores a story's title, URL and metadata, not the article itself. So a summary request does the following:
 
-1. Return the cached summary if Redis has one.
+1. Return the cached summary if Redis has one. The cache key contains a fingerprint of the summarizer, the model and the article's title, URL and text, so an updated article or a changed `SUMMARIZER` gets a fresh summary instead of the old one.
 2. Otherwise find text to summarize, in order of preference: the linked page (fetched and reduced to plain text), then the story's own text for text posts such as "Ask HN", then the title. Every article therefore gets a summary; `source` reports which of the three was used.
 3. Send the text to the summarizer, store the result in Redis for 24 hours, and return it.
 
@@ -224,6 +225,8 @@ The reasoning behind each choice is recorded in [`docs/DESIGN.md`](docs/DESIGN.m
 - **Idempotent fetch.** Stories are written with `INSERT ... ON CONFLICT (hn_id) DO UPDATE`, in one statement. Fetching the same stories again updates their scores instead of duplicating them, so the scheduled job, a manual `POST /fetch` and a retry after a failure can overlap safely.
 - **Summaries on request, not at fetch time.** Summarizing every fetched story would spend AI calls on summaries nobody reads. The cost is a slower first request per article, which the cache then absorbs.
 - **The cache can fail without failing the service.** Redis holds nothing that cannot be rebuilt, so Redis errors are swallowed and the request is served without caching. PostgreSQL is the source of truth and is treated differently.
+- **The cache key follows what the summary depends on.** The key is `summary:{id}:{fingerprint}`, where the fingerprint is a hash of the summarizer, its model and the article's title, URL and text. A later fetch that changes the article, or a switch from `mock` to Gemini, therefore misses the cache and builds a new summary; the old entry is never asked for again and expires by itself.
+- **A summary request gives its database connection back before the slow work.** The page download (up to 10 s) and the AI call (up to 30 s) do not need the database, and the pool holds 15 connections, so holding one for that long would let a few slow requests block every other request.
 - **Summaries expire after 24 hours.** A summary built from a fallback (the article's site was down, so only the title was summarized) would otherwise be served forever.
 - **Database connections are checked before use** (`pool_pre_ping`). In a real run, the first request after PostgreSQL had dropped a pooled connection failed with a 500. For a service whose main job runs once every 6 hours, a stale connection is the normal case, not an edge case.
 - **One malformed story does not cost the other nineteen.** A story missing a required field is skipped and logged.
@@ -243,12 +246,12 @@ The reasoning behind each choice is recorded in [`docs/DESIGN.md`](docs/DESIGN.m
 
 - `POST /fetch` — lets a reviewer trigger a fetch without waiting 6 hours, and gives the API a natural POST.
 - `source` and `cached` in the summary response — make the fallback chain and the cache observable from outside.
-- `GET /health` and container healthchecks, so Compose starts the app only once the database and cache are ready.
+- `GET /health` and `GET /ready` and container healthchecks (the Compose healthcheck calls `/ready`, so a dead database shows as `unhealthy`), so Compose starts the app only once the database and cache are ready.
 - A third summarizer implementation, as a demonstration of what the interface buys: adding Gemini changed one class and one factory branch, and no code that uses a summarizer.
 
 ## Known limitations
 
 - The Claude implementation has not been run against the real Anthropic API.
 - No authentication or rate limiting on the API.
-- The service fetches whatever URL a Hacker News story links to. Only `http` and `https` URLs are fetched, with a 10-second timeout, and at most 8,000 characters of the extracted text are used, but the download itself is not size-limited, redirects are followed, and there is no protection against a link that points at an internal network address — whose content could then be reflected in a summary.
+- The service fetches the page a Hacker News story links to, and anyone can submit such a link, so the fetch is restricted: only `http`/`https` URLs without embedded credentials, and only hosts whose every resolved address is public (loopback, private, link-local and Docker-network addresses are refused, which also keeps their content out of summaries). Redirects are followed by hand, at most 3, with the same check on every hop. The page must be HTML (checked before the body is read) and at most 1 MB, and the fetch has a 10-second timeout. One gap remains: the name is resolved once for the check and again by the HTTP client when it connects, so a DNS-rebinding attacker could answer differently the second time. A real deployment would connect to the address that was approved (or fetch through an egress proxy).
 - Gemini's free tier has request quotas; when they are exhausted the summary endpoint returns `502` until they reset.

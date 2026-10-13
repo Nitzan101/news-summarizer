@@ -98,3 +98,23 @@ def test_malformed_stories_are_skipped_and_the_rest_are_stored(engine, caplog):
     assert stored == 1
     assert count_articles(engine) == 1
     assert caplog.text.count("Skipping") == 4
+
+
+def test_stories_with_wrongly_typed_values_are_skipped_and_the_rest_are_stored(engine, caplog):
+    # Each of these maps without an error but could not be stored in its column.
+    bad_points = {**LINK_STORY, "objectID": "1", "points": {"total": 5}}
+    text_points = {**LINK_STORY, "objectID": "2", "points": "five"}
+    bool_comments = {**LINK_STORY, "objectID": "3", "num_comments": True}
+    list_title = {**LINK_STORY, "objectID": "4", "title": ["a", "b"]}
+    number_url = {**LINK_STORY, "objectID": "5", "url": 12345}
+    object_text = {**LINK_STORY, "objectID": "6", "story_text": {"html": "x"}}
+
+    with Session(engine) as session:
+        stored = upsert_articles(
+            session,
+            [bad_points, text_points, bool_comments, list_title, number_url, object_text, TEXT_STORY],
+        )
+
+    assert stored == 1  # only the good story
+    assert count_articles(engine) == 1
+    assert caplog.text.count("Skipping malformed story") == 6
